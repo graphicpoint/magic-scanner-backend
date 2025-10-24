@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "MagicScanner",
+    "slug": "magic-scanner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f0f1e"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.graphicpoint.magicscanner",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app needs camera access to scan Magic: The Gathering cards",
+        "NSPhotoLibraryUsageDescription": "This app needs photo library access to select card images to scan"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f0f1e"
+      },
+      "package": "com.graphicpoint.magicscanner",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow MagicScanner to access your camera to scan cards"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow MagicScanner to access your photos to scan card images"
+        }
+      ]
+    ]
+  }
+}
