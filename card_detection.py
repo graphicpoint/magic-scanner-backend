@@ -72,24 +72,45 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
+    # Increase contrast using CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+
     # Apply Gaussian blur to reduce noise
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    # Apply adaptive threshold with more sensitive parameters
-    thresh = cv2.adaptiveThreshold(
+    # Try multiple threshold methods and combine them
+
+    # Method 1: Adaptive threshold (INVERTED for dark cards on light background)
+    thresh1 = cv2.adaptiveThreshold(
         blurred,
         255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        21,  # Større block size for bedre lokal tilpasning
-        5    # Lavere C gør detektionen mere følsom
+        cv2.THRESH_BINARY_INV,  # Inverted so cards are white
+        21,
+        5
     )
 
-    # Apply morphological operations to clean up - mindre aggressivt
-    kernel = np.ones((3, 3), np.uint8)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=1)
+    # Method 2: Canny edge detection for clear edges
+    edges = cv2.Canny(blurred, 50, 150)
 
-    return thresh
+    # Method 3: Otsu's thresholding
+    _, thresh2 = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    # Combine methods - if any method finds an edge, use it
+    combined = cv2.bitwise_or(cv2.bitwise_or(thresh1, edges), thresh2)
+
+    # Apply morphological operations to fill gaps and remove noise
+    kernel = np.ones((5, 5), np.uint8)
+    combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel, iterations=3)
+    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel, iterations=1)
+
+    # Dilate slightly to ensure card edges are connected
+    combined = cv2.dilate(combined, kernel, iterations=1)
+
+    logger.info("Preprocessing complete - using combined threshold methods")
+
+    return combined
 
 
 def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
@@ -102,10 +123,10 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
     Returns:
         List of contours representing cards
     """
-    # Find contours
-    contours, _ = cv2.findContours(
+    # Find contours - use TREE to get all hierarchy levels
+    contours, hierarchy = cv2.findContours(
         binary_image,
-        cv2.RETR_EXTERNAL,
+        cv2.RETR_TREE,  # Get all contours including nested ones
         cv2.CHAIN_APPROX_SIMPLE
     )
 
@@ -122,23 +143,26 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
         if i < 10:
             logger.info(f"Contour {i}: area={area}, area%={area/image_area*100:.2f}%")
 
-        # Filter by area - mere følsomt område
-        # Min: 0.3% af billedet for at fange mindre kort, Max: 95% for at tillade tæt beskæring
-        if area < image_area * 0.003 or area > image_area * 0.95:
+        # Filter by area - MEGET tolerant
+        # Min: 0.1% af billedet, Max: 98% (næsten hele billedet er OK hvis det er et tæt crop)
+        min_area = image_area * 0.001
+        max_area = image_area * 0.98
+
+        if area < min_area or area > max_area:
             if i < 10:
-                logger.info(f"Contour {i}: Rejected by area filter")
+                logger.info(f"Contour {i}: Rejected by area filter (min={min_area}, max={max_area})")
             continue
 
         # Check if contour is approximately rectangular
         peri = cv2.arcLength(contour, True)
-        # Mere tolerant approximation for kurvede hjørner
-        approx = cv2.approxPolyDP(contour, 0.04 * peri, True)
+        # Meget tolerant approximation
+        approx = cv2.approxPolyDP(contour, 0.05 * peri, True)
 
         if i < 10:
             logger.info(f"Contour {i}: {len(approx)} corners detected")
 
-        # Magic cards should have 4 corners (or close to it) - mere tolerant
-        if len(approx) >= 4 and len(approx) <= 12:
+        # Magic cards should have 4 corners, but accept 3-20 for flexibility
+        if len(approx) >= 3:
             # Check aspect ratio (Magic cards are roughly 2.5:3.5 = 0.71)
             rect = cv2.minAreaRect(contour)
             width, height = rect[1]
@@ -149,12 +173,15 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
             aspect_ratio = min(width, height) / max(width, height)
 
             if i < 10:
-                logger.info(f"Contour {i}: aspect_ratio={aspect_ratio:.2f}")
+                logger.info(f"Contour {i}: aspect_ratio={aspect_ratio:.2f}, w={width:.0f}, h={height:.0f}")
 
-            # Bredere aspect ratio interval for skæve kort og forskellige vinkler
-            if 0.5 <= aspect_ratio <= 0.9:
+            # MEGET bredt interval - accepter næsten alt rektangulært
+            # Magic cards er ~0.71, men med perspektiv kan det variere meget
+            if 0.4 <= aspect_ratio <= 0.95:
                 card_contours.append(contour)
                 logger.info(f"Contour {i}: ACCEPTED as card candidate!")
+            elif i < 10:
+                logger.info(f"Contour {i}: Rejected by aspect ratio")
 
     # Sort by area (largest first)
     card_contours.sort(key=cv2.contourArea, reverse=True)
