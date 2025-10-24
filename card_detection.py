@@ -113,18 +113,29 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
     card_contours = []
     image_area = binary_image.shape[0] * binary_image.shape[1]
 
-    for contour in contours:
+    logger.info(f"Total contours found: {len(contours)}, Image area: {image_area}")
+
+    for i, contour in enumerate(contours):
         area = cv2.contourArea(contour)
+
+        # Log first few contours for debugging
+        if i < 10:
+            logger.info(f"Contour {i}: area={area}, area%={area/image_area*100:.2f}%")
 
         # Filter by area - mere følsomt område
         # Min: 0.3% af billedet for at fange mindre kort, Max: 95% for at tillade tæt beskæring
         if area < image_area * 0.003 or area > image_area * 0.95:
+            if i < 10:
+                logger.info(f"Contour {i}: Rejected by area filter")
             continue
 
         # Check if contour is approximately rectangular
         peri = cv2.arcLength(contour, True)
         # Mere tolerant approximation for kurvede hjørner
         approx = cv2.approxPolyDP(contour, 0.04 * peri, True)
+
+        if i < 10:
+            logger.info(f"Contour {i}: {len(approx)} corners detected")
 
         # Magic cards should have 4 corners (or close to it) - mere tolerant
         if len(approx) >= 4 and len(approx) <= 12:
@@ -137,9 +148,13 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
 
             aspect_ratio = min(width, height) / max(width, height)
 
+            if i < 10:
+                logger.info(f"Contour {i}: aspect_ratio={aspect_ratio:.2f}")
+
             # Bredere aspect ratio interval for skæve kort og forskellige vinkler
             if 0.5 <= aspect_ratio <= 0.9:
                 card_contours.append(contour)
+                logger.info(f"Contour {i}: ACCEPTED as card candidate!")
 
     # Sort by area (largest first)
     card_contours.sort(key=cv2.contourArea, reverse=True)
