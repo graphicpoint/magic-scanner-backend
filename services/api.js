@@ -14,10 +14,10 @@ const API_CONFIG = {
   LOCAL_URL: 'http://192.168.1.5:8000', // UPDATE THIS with your local IP
   
   // After deploying to Railway, update this:
-  PRODUCTION_URL: 'https://your-railway-app.up.railway.app', // UPDATE THIS
+  PRODUCTION_URL: 'https://magic-scanner-backend-production.up.railway.app', // UPDATE THIS
   
   // Switch between local and production
-  USE_LOCAL: true, // Set to false when using Railway
+  USE_LOCAL: false, // Set to false when using Railway
 };
 
 // Get the active API URL

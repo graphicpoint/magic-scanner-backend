@@ -62,44 +62,43 @@ def detect_cards_from_image(image_data: bytes) -> List[np.ndarray]:
 def preprocess_image(image: np.ndarray) -> np.ndarray:
     """
     Preprocess image for better card detection
-    
+
     Args:
         image: Input image
-        
+
     Returns:
         Preprocessed binary image
     """
     # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    
-    # Apply bilateral filter to reduce noise while keeping edges sharp
-    blurred = cv2.bilateralFilter(gray, 11, 17, 17)
-    
-    # Apply adaptive threshold
+
+    # Apply Gaussian blur to reduce noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # Apply adaptive threshold with more sensitive parameters
     thresh = cv2.adaptiveThreshold(
         blurred,
         255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY,
-        11,
-        2
+        21,  # Større block size for bedre lokal tilpasning
+        5    # Lavere C gør detektionen mere følsom
     )
-    
-    # Apply morphological operations to clean up
+
+    # Apply morphological operations to clean up - mindre aggressivt
     kernel = np.ones((3, 3), np.uint8)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
-    
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=1)
+
     return thresh
 
 
 def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
     """
     Find contours that likely represent Magic cards
-    
+
     Args:
         binary_image: Binary preprocessed image
-        
+
     Returns:
         List of contours representing cards
     """
@@ -109,41 +108,42 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
         cv2.RETR_EXTERNAL,
         cv2.CHAIN_APPROX_SIMPLE
     )
-    
+
     # Filter contours based on area and shape
     card_contours = []
     image_area = binary_image.shape[0] * binary_image.shape[1]
-    
+
     for contour in contours:
         area = cv2.contourArea(contour)
-        
-        # Filter by area (cards should be significant portion of image)
-        # Min: 1% of image, Max: 80% of image (to exclude full-image borders)
-        if area < image_area * 0.01 or area > image_area * 0.8:
+
+        # Filter by area - mere følsomt område
+        # Min: 0.3% af billedet for at fange mindre kort, Max: 95% for at tillade tæt beskæring
+        if area < image_area * 0.003 or area > image_area * 0.95:
             continue
-        
+
         # Check if contour is approximately rectangular
         peri = cv2.arcLength(contour, True)
-        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-        
-        # Magic cards should have 4 corners (or close to it)
-        if len(approx) >= 4 and len(approx) <= 8:
+        # Mere tolerant approximation for kurvede hjørner
+        approx = cv2.approxPolyDP(contour, 0.04 * peri, True)
+
+        # Magic cards should have 4 corners (or close to it) - mere tolerant
+        if len(approx) >= 4 and len(approx) <= 12:
             # Check aspect ratio (Magic cards are roughly 2.5:3.5 = 0.71)
             rect = cv2.minAreaRect(contour)
             width, height = rect[1]
-            
+
             if width == 0 or height == 0:
                 continue
-            
+
             aspect_ratio = min(width, height) / max(width, height)
-            
-            # Allow aspect ratios between 0.6 and 0.8 (cards might be slightly skewed)
-            if 0.6 <= aspect_ratio <= 0.8:
+
+            # Bredere aspect ratio interval for skæve kort og forskellige vinkler
+            if 0.5 <= aspect_ratio <= 0.9:
                 card_contours.append(contour)
-    
+
     # Sort by area (largest first)
     card_contours.sort(key=cv2.contourArea, reverse=True)
-    
+
     return card_contours
 
 
