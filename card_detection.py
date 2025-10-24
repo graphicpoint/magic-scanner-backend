@@ -103,7 +103,10 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     # Apply morphological operations to fill gaps and remove noise
     kernel = np.ones((5, 5), np.uint8)
     combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel, iterations=3)
-    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel, iterations=1)
+
+    # Remove small noise with opening
+    kernel_open = np.ones((7, 7), np.uint8)
+    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel_open, iterations=2)
 
     # Dilate slightly to ensure card edges are connected
     combined = cv2.dilate(combined, kernel, iterations=1)
@@ -143,14 +146,14 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
         if i < 10:
             logger.info(f"Contour {i}: area={area}, area%={area/image_area*100:.2f}%")
 
-        # Filter by area - MEGET tolerant
-        # Min: 0.1% af billedet, Max: 98% (næsten hele billedet er OK hvis det er et tæt crop)
-        min_area = image_area * 0.001
+        # Filter by area - kort skal være en betydelig del af billedet
+        # For et 1920x996 billede (1.9M pixels), et Magic kort bør være mindst 5-10% af billedet
+        min_area = image_area * 0.05  # 5% minimum - kort skal være synligt
         max_area = image_area * 0.98
 
         if area < min_area or area > max_area:
             if i < 10:
-                logger.info(f"Contour {i}: Rejected by area filter (min={min_area}, max={max_area})")
+                logger.info(f"Contour {i}: Rejected by area filter (min={min_area:.0f}, max={max_area:.0f})")
             continue
 
         # Check if contour is approximately rectangular
@@ -179,12 +182,19 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
             # Magic cards er ~0.71, men med perspektiv kan det variere meget
             if 0.4 <= aspect_ratio <= 0.95:
                 card_contours.append(contour)
-                logger.info(f"Contour {i}: ACCEPTED as card candidate!")
+                logger.info(f"Contour {i}: ACCEPTED! area={area:.0f} ({area/image_area*100:.1f}%), ratio={aspect_ratio:.2f}, w={width:.0f}, h={height:.0f}")
             elif i < 10:
                 logger.info(f"Contour {i}: Rejected by aspect ratio")
 
     # Sort by area (largest first)
     card_contours.sort(key=cv2.contourArea, reverse=True)
+
+    # Limit to maximum 10 cards to avoid false positives
+    # Most scans will have 1-10 cards
+    max_cards = 10
+    if len(card_contours) > max_cards:
+        logger.info(f"Limiting from {len(card_contours)} to {max_cards} largest contours")
+        card_contours = card_contours[:max_cards]
 
     return card_contours
 
