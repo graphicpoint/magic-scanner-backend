@@ -95,7 +95,8 @@ RULES:
 Example card name locations:
 - Card name: Top of card in large text
 - Set symbol: Right side, middle area (small icon)
-- Collector number: Bottom of card, often with card count (e.g., "34/274")
+- Collector number: Bottom of card, often with card count (e.g., "34/274")"""
+                        }
                     ],
                 }
             ],
