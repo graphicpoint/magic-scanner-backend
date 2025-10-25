@@ -276,11 +276,12 @@ async def get_database_cards() -> Dict[str, Any]:
         )
 
     # Extract card information from database
+    # Database structure: {scryfall_id: {name, hash, set, set_name, ...}}
     cards = []
-    for card_name, card_data in CARD_DATABASE.items():
+    for scryfall_id, card_data in CARD_DATABASE.items():
         cards.append({
-            "name": card_name,
-            "scryfall_id": card_data.get('scryfall_id', 'unknown'),
+            "name": card_data.get('name', 'unknown'),
+            "scryfall_id": scryfall_id,
             "set": card_data.get('set', 'unknown'),
             "set_name": card_data.get('set_name', 'unknown')
         })
