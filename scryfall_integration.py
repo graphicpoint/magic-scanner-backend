@@ -122,6 +122,34 @@ async def get_card_prices(scryfall_id: str) -> Dict[str, Optional[str]]:
         }
 
 
+async def get_card_details_by_set(set_code: str, collector_number: str) -> Optional[Dict[str, Any]]:
+    """
+    Get card details by set code and collector number
+
+    Args:
+        set_code: Set code (e.g., "NEO")
+        collector_number: Collector number
+
+    Returns:
+        Card object or None
+    """
+    try:
+        endpoint = f"/cards/{set_code}/{collector_number}"
+        card_data = await _client.get(endpoint)
+
+        return card_data
+
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            logger.info(f"Card not found: {set_code}/{collector_number}")
+            return None
+        logger.error(f"Error fetching card {set_code}/{collector_number}: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error fetching card: {e}")
+        raise
+
+
 async def search_card_by_name(card_name: str, set_code: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Search for a card by name

@@ -10,9 +10,8 @@ from typing import List, Dict, Any
 import logging
 from datetime import datetime
 
-from card_detection import detect_cards_from_image
-from card_matching import match_cards, load_card_database
-from scryfall_integration import get_card_details, get_card_prices
+from claude_vision import identify_cards_with_vision
+from scryfall_integration import get_card_details, get_card_prices, search_card_by_name, get_card_details_by_set
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -34,21 +33,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global card database
-CARD_DATABASE = None
-
-
 @app.on_event("startup")
 async def startup_event():
-    """Load card database on startup"""
-    global CARD_DATABASE
-    logger.info("Loading card database...")
-    try:
-        CARD_DATABASE = load_card_database()
-        logger.info(f"Loaded {len(CARD_DATABASE)} cards into database")
-    except Exception as e:
-        logger.error(f"Failed to load card database: {e}")
-        logger.info("API will continue but card matching may fail")
+    """Startup event"""
+    logger.info("MagicScanner API starting up...")
+    logger.info("Using Claude Vision for card identification")
 
 
 @app.get("/")
@@ -67,8 +56,7 @@ async def health_check():
     """Detailed health check"""
     return {
         "status": "healthy",
-        "database_loaded": CARD_DATABASE is not None,
-        "cards_in_database": len(CARD_DATABASE) if CARD_DATABASE else 0,
+        "vision_enabled": True,
         "timestamp": datetime.now().isoformat()
     }
 
@@ -76,13 +64,13 @@ async def health_check():
 @app.post("/scan")
 async def scan_cards(file: UploadFile = File(...)) -> Dict[str, Any]:
     """
-    Scan an image containing multiple Magic cards
-    
+    Scan an image containing Magic cards using Claude Vision
+
     Args:
         file: Image file containing Magic cards
-        
+
     Returns:
-        JSON with detected cards and their details
+        JSON with identified cards and their details
     """
     try:
         # Validate file type
@@ -91,87 +79,95 @@ async def scan_cards(file: UploadFile = File(...)) -> Dict[str, Any]:
                 status_code=400,
                 detail="File must be an image"
             )
-        
+
         logger.info(f"Processing image: {file.filename}")
-        
+
         # Read image data
         image_data = await file.read()
-        
-        # Step 1: Detect individual cards in the image
-        logger.info("Detecting cards in image...")
-        detected_cards = detect_cards_from_image(image_data)
-        
-        if not detected_cards:
+
+        # Step 1: Use Claude Vision to identify cards
+        logger.info("Identifying cards with Claude Vision...")
+        identified_cards = identify_cards_with_vision(image_data)
+
+        if not identified_cards:
             return {
                 "success": True,
                 "cards_found": 0,
                 "cards": [],
-                "message": "No cards detected in image"
+                "message": "No cards identified in image"
             }
-        
-        logger.info(f"Detected {len(detected_cards)} cards")
-        
-        # Step 2: Match each detected card against database
-        if CARD_DATABASE is None:
-            raise HTTPException(
-                status_code=503,
-                detail="Card database not loaded"
-            )
-        
-        logger.info("Matching cards against database...")
-        matched_cards = match_cards(detected_cards, CARD_DATABASE)
-        
-        # Step 3: Get detailed information for matched cards
+
+        logger.info(f"Claude Vision identified {len(identified_cards)} card(s)")
+
+        # Step 2: Get detailed information for each identified card
         logger.info("Fetching card details from Scryfall...")
         results = []
-        
-        for i, match in enumerate(matched_cards):
-            if match['matched']:
-                try:
-                    # Get full card details from Scryfall
-                    card_details = await get_card_details(match['scryfall_id'])
-                    
+
+        for i, card_info in enumerate(identified_cards):
+            try:
+                card_name = card_info.get('name')
+                set_code = card_info.get('set')
+                collector_number = card_info.get('collector_number')
+                confidence = card_info.get('confidence', 'medium')
+
+                logger.info(f"Looking up card: {card_name} (set: {set_code}, number: {collector_number})")
+
+                # Search for card on Scryfall
+                # If we have set and collector number, use specific lookup
+                if set_code and collector_number:
+                    try:
+                        card_details = await get_card_details_by_set(set_code, collector_number)
+                    except:
+                        # Fallback to name search
+                        card_details = await search_card_by_name(card_name, set_code)
+                else:
+                    # Search by name (and optionally set)
+                    card_details = await search_card_by_name(card_name, set_code)
+
+                if card_details:
                     # Get current prices
-                    prices = await get_card_prices(match['scryfall_id'])
-                    
+                    prices = await get_card_prices(card_details['id'])
+
                     results.append({
                         "card_number": i + 1,
                         "matched": True,
-                        "confidence": match['confidence'],
+                        "confidence": confidence,
                         "name": card_details['name'],
                         "set": card_details['set_name'],
                         "set_code": card_details['set'],
                         "collector_number": card_details.get('collector_number'),
                         "rarity": card_details.get('rarity'),
                         "image_url": card_details.get('image_uris', {}).get('normal'),
-                        "scryfall_id": match['scryfall_id'],
+                        "scryfall_id": card_details['id'],
                         "prices": prices,
                         "scryfall_uri": card_details.get('scryfall_uri')
                     })
-                except Exception as e:
-                    logger.error(f"Error fetching details for card {i+1}: {e}")
+                else:
                     results.append({
                         "card_number": i + 1,
-                        "matched": True,
-                        "confidence": match['confidence'],
-                        "scryfall_id": match['scryfall_id'],
-                        "error": "Failed to fetch card details"
+                        "matched": False,
+                        "identified_name": card_name,
+                        "message": "Card identified but not found in Scryfall"
                     })
-            else:
+
+            except Exception as e:
+                logger.error(f"Error processing card {i+1} ({card_name}): {e}")
                 results.append({
                     "card_number": i + 1,
                     "matched": False,
-                    "message": "Could not identify this card"
+                    "identified_name": card_name,
+                    "error": str(e)
                 })
-        
+
         return {
             "success": True,
-            "cards_found": len(detected_cards),
+            "cards_found": len(identified_cards),
             "cards_matched": sum(1 for r in results if r.get('matched')),
             "cards": results,
+            "method": "claude_vision",
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -247,54 +243,6 @@ async def identify_single_card(file: UploadFile = File(...)) -> Dict[str, Any]:
         )
 
 
-@app.get("/database/stats")
-async def database_stats():
-    """Get statistics about the card database"""
-    if CARD_DATABASE is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Card database not loaded"
-        )
-
-    return {
-        "total_cards": len(CARD_DATABASE),
-        "status": "loaded",
-        "timestamp": datetime.now().isoformat()
-    }
-
-
-@app.get("/database/cards")
-async def get_database_cards() -> Dict[str, Any]:
-    """
-    Get all cards in the database
-    Returns name and scryfall_id for each card
-    """
-    if CARD_DATABASE is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Card database not loaded"
-        )
-
-    # Extract card information from database
-    # Database structure: {scryfall_id: {name, hash, set, set_name, ...}}
-    cards = []
-    for scryfall_id, card_data in CARD_DATABASE.items():
-        cards.append({
-            "name": card_data.get('name', 'unknown'),
-            "scryfall_id": scryfall_id,
-            "set": card_data.get('set', 'unknown'),
-            "set_name": card_data.get('set_name', 'unknown')
-        })
-
-    # Sort by name for easier browsing
-    cards.sort(key=lambda x: x['name'])
-
-    return {
-        "success": True,
-        "total_cards": len(cards),
-        "cards": cards,
-        "timestamp": datetime.now().isoformat()
-    }
 
 
 if __name__ == "__main__":
