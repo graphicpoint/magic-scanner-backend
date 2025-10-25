@@ -16,6 +16,7 @@ import { scanCards } from '../services/api';
 export default function CameraScreen({ navigation }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [scanMode, setScanMode] = useState('default'); // 'default' or 'pro'
   const cameraRef = useRef(null);
 
   // Request camera permission if not granted
@@ -87,9 +88,10 @@ export default function CameraScreen({ navigation }) {
   const processImage = async (imageUri) => {
     try {
       console.log('Processing image:', imageUri);
+      console.log('Scan mode:', scanMode);
 
-      // Call backend API
-      const results = await scanCards(imageUri);
+      // Call backend API with scan mode
+      const results = await scanCards(imageUri, scanMode);
 
       console.log('Scan results:', results);
 
@@ -123,6 +125,40 @@ export default function CameraScreen({ navigation }) {
         {/* Overlay with guidelines */}
         <View style={styles.overlay}>
           <View style={styles.topOverlay}>
+            {/* Scan Mode Toggle */}
+            <View style={styles.scanModeContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.scanModeButton,
+                  scanMode === 'default' && styles.scanModeButtonActive
+                ]}
+                onPress={() => setScanMode('default')}
+                disabled={isProcessing}
+              >
+                <Text style={[
+                  styles.scanModeText,
+                  scanMode === 'default' && styles.scanModeTextActive
+                ]}>
+                  Default Scan
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.scanModeButton,
+                  scanMode === 'pro' && styles.scanModeButtonActive
+                ]}
+                onPress={() => setScanMode('pro')}
+                disabled={isProcessing}
+              >
+                <Text style={[
+                  styles.scanModeText,
+                  scanMode === 'pro' && styles.scanModeTextActive
+                ]}>
+                  Pro Scan
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             <Text style={styles.instructionText}>
               Position cards within the frame
             </Text>
@@ -218,6 +254,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 60,
     paddingHorizontal: 20,
+  },
+  scanModeContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 25,
+    padding: 4,
+    marginBottom: 20,
+  },
+  scanModeButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  scanModeButtonActive: {
+    backgroundColor: '#ff6b6b',
+  },
+  scanModeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+    opacity: 0.6,
+  },
+  scanModeTextActive: {
+    opacity: 1,
   },
   instructionText: {
     fontSize: 20,

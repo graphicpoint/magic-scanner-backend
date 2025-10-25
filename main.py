@@ -11,6 +11,7 @@ import logging
 from datetime import datetime
 
 from claude_vision import identify_cards_with_vision
+from multi_vision import identify_cards_pro
 from scryfall_integration import get_card_details, get_card_prices, search_card_by_name, get_card_details_by_set
 
 # Setup logging
@@ -62,12 +63,16 @@ async def health_check():
 
 
 @app.post("/scan")
-async def scan_cards(file: UploadFile = File(...)) -> Dict[str, Any]:
+async def scan_cards(
+    file: UploadFile = File(...),
+    scan_mode: str = "default"
+) -> Dict[str, Any]:
     """
-    Scan an image containing Magic cards using Claude Vision
+    Scan an image containing Magic cards using AI Vision
 
     Args:
         file: Image file containing Magic cards
+        scan_mode: "default" (Claude only) or "pro" (Claude + OpenAI parallel validation)
 
     Returns:
         JSON with identified cards and their details
@@ -80,14 +85,25 @@ async def scan_cards(file: UploadFile = File(...)) -> Dict[str, Any]:
                 detail="File must be an image"
             )
 
-        logger.info(f"Processing image: {file.filename}")
+        # Validate scan_mode
+        if scan_mode not in ["default", "pro"]:
+            raise HTTPException(
+                status_code=400,
+                detail="scan_mode must be 'default' or 'pro'"
+            )
+
+        logger.info(f"Processing image: {file.filename} (mode: {scan_mode})")
 
         # Read image data
         image_data = await file.read()
 
-        # Step 1: Use Claude Vision to identify cards
-        logger.info("Identifying cards with Claude Vision...")
-        identified_cards = identify_cards_with_vision(image_data)
+        # Step 1: Identify cards using selected mode
+        if scan_mode == "pro":
+            logger.info("Using Pro Scan (Claude + OpenAI parallel validation)...")
+            identified_cards = identify_cards_pro(image_data)
+        else:
+            logger.info("Using Default Scan (Claude Vision only)...")
+            identified_cards = identify_cards_with_vision(image_data)
 
         if not identified_cards:
             return {
@@ -97,7 +113,7 @@ async def scan_cards(file: UploadFile = File(...)) -> Dict[str, Any]:
                 "message": "No cards identified in image"
             }
 
-        logger.info(f"Claude Vision identified {len(identified_cards)} card(s)")
+        logger.info(f"Vision API identified {len(identified_cards)} card(s)")
 
         # Step 2: Get detailed information for each identified card
         logger.info("Fetching card details from Scryfall...")
@@ -181,7 +197,8 @@ async def scan_cards(file: UploadFile = File(...)) -> Dict[str, Any]:
             "cards_found": len(identified_cards),
             "cards_matched": sum(1 for r in results if r.get('matched')),
             "cards": results,
-            "method": "claude_vision",
+            "scan_mode": scan_mode,
+            "method": "pro_scan" if scan_mode == "pro" else "claude_vision",
             "timestamp": datetime.now().isoformat()
         }
 

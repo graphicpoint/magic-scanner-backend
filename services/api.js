@@ -28,16 +28,18 @@ const getApiUrl = () => {
 /**
  * Scan an image containing multiple Magic cards
  * @param {string} imageUri - URI of the image to scan
+ * @param {string} scanMode - 'default' or 'pro' scan mode
  * @returns {Promise<Object>} Scan results
  */
-export const scanCards = async (imageUri) => {
+export const scanCards = async (imageUri, scanMode = 'default') => {
   try {
     const apiUrl = getApiUrl();
     console.log('Sending request to:', apiUrl);
+    console.log('Scan mode:', scanMode);
 
     // Create form data
     const formData = new FormData();
-    
+
     // Extract filename from URI
     const filename = imageUri.split('/').pop();
     const match = /\.(\w+)$/.exec(filename);
@@ -49,8 +51,8 @@ export const scanCards = async (imageUri) => {
       type: type,
     });
 
-    // Send request
-    const response = await fetch(`${apiUrl}/scan`, {
+    // Send request with scan_mode parameter
+    const response = await fetch(`${apiUrl}/scan?scan_mode=${scanMode}`, {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
