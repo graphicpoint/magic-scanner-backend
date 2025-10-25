@@ -122,16 +122,17 @@ async def scan_cards(file: UploadFile = File(...)) -> Dict[str, Any]:
                 logger.info(f"Looking up card: {card_name} (set: {set_code}, number: {collector_number})")
 
                 # Search for card on Scryfall
-                # If we have set and collector number, use specific lookup
+                card_details = None
+
+                # If we have set and collector number, try specific lookup first
                 if set_code and collector_number:
-                    try:
-                        card_details = await get_card_details_by_set(set_code, collector_number)
-                    except:
-                        # Fallback to name search
-                        card_details = await search_card_by_name(card_name, set_code)
-                else:
-                    # Search by name (and optionally set)
-                    card_details = await search_card_by_name(card_name, set_code)
+                    card_details = await get_card_details_by_set(set_code, collector_number)
+                    if not card_details:
+                        logger.info(f"Set/number lookup failed, falling back to name search")
+
+                # Fallback to name search if specific lookup failed or wasn't possible
+                if not card_details:
+                    card_details = await search_card_by_name(card_name, set_code if set_code else None)
 
                 if card_details:
                     # Get current prices
