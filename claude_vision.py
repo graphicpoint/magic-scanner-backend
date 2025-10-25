@@ -50,7 +50,7 @@ def identify_cards_with_vision(image_data: bytes) -> List[Dict[str, Any]]:
 
         # Call Claude Vision API
         message = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=2048,
             messages=[
                 {
