@@ -12,7 +12,8 @@ from datetime import datetime
 
 from claude_vision import identify_cards_with_vision
 from multi_vision import identify_cards_pro
-from scryfall_integration import get_card_details, get_card_prices, search_card_by_name, get_card_details_by_set
+from scryfall_integration import get_card_details, get_card_prices, search_card_by_name, get_card_details_by_set, get_all_printings
+from image_comparison import compare_cards_with_vision
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -179,6 +180,29 @@ async def scan_cards(
                 if not card_details:
                     logger.info(f"All set/number attempts failed, falling back to name search")
                     card_details = await search_card_by_name(card_name, None)
+
+                # If name search found something but we're not confident, use image comparison
+                # This helps when there are multiple editions of the same card
+                if card_details and (confidence == 'medium' or confidence == 'low' or len(set_number_attempts) == 0):
+                    logger.info(f"Using image comparison to verify edition (confidence: {confidence})...")
+
+                    # Get all printings of this card
+                    all_printings = await get_all_printings(card_name, limit=10)
+
+                    if len(all_printings) > 1:
+                        logger.info(f"Found {len(all_printings)} printings - using Vision to compare")
+
+                        # Use Vision to compare user's photo with candidate cards
+                        best_match = compare_cards_with_vision(image_data, all_printings)
+
+                        if best_match:
+                            logger.info(f"✓ Image comparison selected: {best_match['set'].upper()}/{best_match.get('collector_number')}")
+                            card_details = best_match
+                            confidence = 'high'  # Upgrade confidence since we verified with image comparison
+                        else:
+                            logger.info("Image comparison didn't find a confident match, keeping name search result")
+                    else:
+                        logger.info(f"Only 1 printing found, skipping image comparison")
 
                 if card_details:
                     # Get current prices

@@ -193,6 +193,51 @@ async def search_card_by_name(card_name: str, set_code: Optional[str] = None) ->
         raise
 
 
+async def get_all_printings(card_name: str, limit: int = 10) -> list[Dict[str, Any]]:
+    """
+    Get all printings/editions of a card by name
+
+    Args:
+        card_name: Name of the card
+        limit: Maximum number of printings to return (default 10)
+
+    Returns:
+        List of card objects for all printings
+    """
+    try:
+        # Build search query for exact name match, all printings
+        query = f'!"{card_name}"'
+
+        endpoint = "/cards/search"
+        params = {
+            'q': query,
+            'unique': 'prints',
+            'order': 'released',
+            'dir': 'desc'  # Newest first
+        }
+
+        result = await _client.get(endpoint, params)
+
+        if result.get('total_cards', 0) > 0:
+            # Return up to 'limit' results
+            printings = result['data'][:limit]
+            logger.info(f"Found {len(printings)} printings for '{card_name}'")
+            return printings
+
+        logger.info(f"No printings found for '{card_name}'")
+        return []
+
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            logger.info(f"No printings found: {card_name}")
+            return []
+        logger.error(f"Error fetching printings for {card_name}: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error fetching printings: {e}")
+        raise
+
+
 async def get_bulk_data_info() -> Dict[str, Any]:
     """
     Get information about available bulk data downloads
