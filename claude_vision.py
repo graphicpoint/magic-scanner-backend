@@ -66,31 +66,36 @@ def identify_cards_with_vision(image_data: bytes) -> List[Dict[str, Any]]:
                         },
                         {
                             "type": "text",
-                            "text": """Identify all Magic: The Gathering cards visible in this image.
+                            "text": """You are analyzing a Magic: The Gathering card photo.
 
-For each card you can see, provide:
-- Card name (exact name as it appears on the card)
-- Set code (3-4 letter code, e.g., "NEO", "MID", "AFR") if visible
-- Collector number if visible
+CRITICAL: Read the EXACT card name from the card itself - do not guess or infer.
 
-Return your response as a JSON array with this exact format:
+For each card visible:
+1. Read the card name at the TOP of the card (in the title box)
+2. Look for the set symbol (middle-right side of card)
+3. Look for the collector number at the BOTTOM of the card (format: 123/456)
+
+Return ONLY a JSON array in this exact format:
 [
   {
-    "name": "Lightning Bolt",
-    "set": "LEA",
-    "collector_number": "162",
+    "name": "Exact Card Name From Title",
+    "set": "SET",
+    "collector_number": "123",
     "confidence": "high"
   }
 ]
 
-Rules:
-- Only include cards you can clearly identify
-- If you can't read the set or collector number, omit that field
-- Use "confidence": "high", "medium", or "low" based on image quality
-- If no Magic cards are visible, return an empty array: []
+RULES:
+- Read card name EXACTLY as printed - do not abbreviate or change spelling
+- If you cannot read the full card name clearly, use "confidence": "low"
+- Only include set/collector_number if you can READ them on the card
+- If no Magic cards visible, return: []
+- Return ONLY the JSON array, no markdown, no explanations
 
-Return ONLY the JSON array, no other text."""
-                        }
+Example card name locations:
+- Card name: Top of card in large text
+- Set symbol: Right side, middle area (small icon)
+- Collector number: Bottom of card, often with card count (e.g., "34/274")
                     ],
                 }
             ],
