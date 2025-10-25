@@ -110,6 +110,15 @@ async def scan_cards(file: UploadFile = File(...)) -> Dict[str, Any]:
                 collector_number = card_info.get('collector_number')
                 confidence = card_info.get('confidence', 'medium')
 
+                # Clean up collector number
+                if collector_number:
+                    # Remove format like "048/168" -> just keep "48"
+                    if '/' in collector_number:
+                        collector_number = collector_number.split('/')[0]
+                    # Remove leading zeros (Scryfall uses "483" not "0483")
+                    if collector_number.isdigit():
+                        collector_number = str(int(collector_number))
+
                 logger.info(f"Looking up card: {card_name} (set: {set_code}, number: {collector_number})")
 
                 # Search for card on Scryfall
