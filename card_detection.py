@@ -140,7 +140,7 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
         # Tolerant approximation
         approx = cv2.approxPolyDP(contour, 0.04 * peri, True)
 
-        if i < 15:
+        if i < 30:
             logger.info(f"Contour {i}: {len(approx)} corners detected")
 
         # Magic cards should have 4 corners, but accept 3-8 for flexibility
@@ -155,7 +155,7 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
 
             aspect_ratio = min(width, height) / max(width, height)
 
-            if i < 15:
+            if i < 30:
                 logger.info(f"Contour {i}: aspect_ratio={aspect_ratio:.2f}, w={width:.0f}, h={height:.0f}")
 
             # Magic card aspect ratio with tolerance
@@ -164,9 +164,9 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
             if 0.50 <= aspect_ratio <= 0.90:
                 card_contours.append(contour)
                 logger.info(f"Contour {i}: ACCEPTED! area={area:.0f} ({area/image_area*100:.1f}%), ratio={aspect_ratio:.2f}, w={width:.0f}, h={height:.0f}")
-            elif i < 15:
-                logger.info(f"Contour {i}: Rejected by aspect ratio ({aspect_ratio:.2f} not in range 0.55-0.85)")
-        elif i < 15:
+            elif i < 30:
+                logger.info(f"Contour {i}: Rejected by aspect ratio ({aspect_ratio:.2f} not in range 0.50-0.90)")
+        elif i < 30:
             logger.info(f"Contour {i}: Rejected - {len(approx)} corners (need 3-8)")
 
     # Sort by area (largest first)
