@@ -30,14 +30,25 @@ def identify_cards_pro(image_data: bytes) -> List[Dict[str, Any]]:
     # Call both APIs in parallel using asyncio
     import concurrent.futures
 
+    claude_results = []
+    openai_results = []
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         # Submit both tasks
         claude_future = executor.submit(identify_with_claude, image_data)
         openai_future = executor.submit(identify_cards_with_openai, image_data)
 
-        # Wait for both to complete
-        claude_results = claude_future.result()
-        openai_results = openai_future.result()
+        # Wait for both to complete and handle errors
+        try:
+            claude_results = claude_future.result()
+        except Exception as e:
+            logger.error(f"Claude Vision failed: {e}")
+
+        try:
+            openai_results = openai_future.result()
+        except Exception as e:
+            logger.error(f"OpenAI Vision failed: {e}")
+            # If OpenAI fails (e.g., API key not set), continue with Claude only
 
     logger.info(f"Claude identified {len(claude_results)} card(s)")
     logger.info(f"OpenAI identified {len(openai_results)} card(s)")

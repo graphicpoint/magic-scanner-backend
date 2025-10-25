@@ -10,8 +10,12 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+def _get_openai_client():
+    """Lazy initialization of OpenAI client"""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY environment variable is not set")
+    return OpenAI(api_key=api_key)
 
 def identify_cards_with_openai(image_data: bytes) -> List[Dict[str, Any]]:
     """
@@ -25,6 +29,9 @@ def identify_cards_with_openai(image_data: bytes) -> List[Dict[str, Any]]:
     """
     try:
         logger.info("Sending image to OpenAI Vision API...")
+
+        # Get OpenAI client (lazy initialization)
+        client = _get_openai_client()
 
         # Encode image to base64
         image_base64 = base64.b64encode(image_data).decode('utf-8')
