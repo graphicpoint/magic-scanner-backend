@@ -62,7 +62,7 @@ def detect_cards_from_image(image_data: bytes) -> List[np.ndarray]:
 def preprocess_image(image: np.ndarray) -> np.ndarray:
     """
     Preprocess image for better card detection
-    Uses edge detection to find card boundaries
+    Hybrid approach: edges + contrast detection
 
     Args:
         image: Input image
@@ -73,41 +73,55 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    # Apply bilateral filter to reduce noise while keeping edges sharp
-    # This is crucial for wooden table backgrounds
-    filtered = cv2.bilateralFilter(gray, 11, 75, 75)
+    # Enhance contrast first
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
 
-    # Enhance contrast with CLAHE
-    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-    enhanced = clahe.apply(filtered)
+    # Reduce noise while preserving edges
+    denoised = cv2.fastNlMeansDenoising(enhanced, None, 10, 7, 21)
 
-    # Light blur to reduce remaining noise
-    blurred = cv2.GaussianBlur(enhanced, (3, 3), 0)
+    # Light blur
+    blurred = cv2.GaussianBlur(denoised, (5, 5), 0)
 
-    # Multi-scale edge detection approach
-    # Canny with moderate thresholds - focus on strong edges (card border)
-    edges1 = cv2.Canny(blurred, 40, 120, apertureSize=3)
+    # APPROACH 1: Edge detection
+    # Very sensitive Canny - we want to catch card borders
+    edges = cv2.Canny(blurred, 15, 60, apertureSize=3)
 
-    # More sensitive Canny for faint edges
-    edges2 = cv2.Canny(blurred, 20, 80, apertureSize=3)
+    # APPROACH 2: Adaptive threshold
+    # This catches the contrast between card and background
+    adaptive = cv2.adaptiveThreshold(
+        blurred,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31,
+        5
+    )
+    # Invert to get dark regions as white
+    adaptive_inv = cv2.bitwise_not(adaptive)
 
-    # Combine both edge maps
-    edges = cv2.bitwise_or(edges1, edges2)
+    # APPROACH 3: Simple threshold for very dark areas (black border)
+    _, dark_thresh = cv2.threshold(blurred, 70, 255, cv2.THRESH_BINARY_INV)
 
-    # Morphological closing to connect nearby edges (4 sides of card)
-    kernel_rect = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
-    closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_rect, iterations=3)
+    # Combine all three approaches
+    combined = cv2.bitwise_or(edges, cv2.bitwise_or(adaptive_inv, dark_thresh))
+
+    # Morphological operations to connect card edges
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11))
+
+    # Close gaps to form complete rectangles
+    closed = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel, iterations=5)
 
     # Remove small noise
-    kernel_small = np.ones((3, 3), np.uint8)
-    cleaned = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel_small, iterations=1)
+    kernel_small = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    cleaned = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel_small, iterations=2)
 
-    # Dilate to strengthen the detected edges
-    dilated = cv2.dilate(cleaned, kernel_rect, iterations=2)
+    # Final dilation to ensure edges are strong
+    final = cv2.dilate(cleaned, kernel, iterations=1)
 
-    logger.info("Preprocessing complete - multi-scale edge detection")
+    logger.info("Preprocessing complete - hybrid edge+threshold detection")
 
-    return dilated
+    return final
 
 
 def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
@@ -137,17 +151,16 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
     for i, contour in enumerate(contours):
         area = cv2.contourArea(contour)
 
-        # Log first few contours for debugging
-        if i < 15:
+        # Log ALL contours for debugging (limited to first 30)
+        if i < 30:
             logger.info(f"Contour {i}: area={area}, area%={area/image_area*100:.2f}%")
 
-        # Filter by area - cards should occupy a reasonable portion of the image
-        # Too small = noise, too large = entire image border
-        min_area = image_area * 0.02  # 2% minimum
-        max_area = image_area * 0.85  # 85% max - reject "whole image" contours
+        # Filter by area - very lenient to catch cards at various distances
+        min_area = image_area * 0.005  # 0.5% minimum - very small cards in distance
+        max_area = image_area * 0.80  # 80% max - reject "whole image" contours
 
         if area < min_area or area > max_area:
-            if i < 15:
+            if i < 30:
                 logger.info(f"Contour {i}: Rejected by area filter (min={min_area:.0f}, max={max_area:.0f})")
             continue
 
