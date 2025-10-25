@@ -127,12 +127,19 @@ async def scan_cards(file: UploadFile = File(...)) -> Dict[str, Any]:
                 # If we have set and collector number, try specific lookup first
                 if set_code and collector_number:
                     card_details = await get_card_details_by_set(set_code, collector_number)
-                    if not card_details:
+
+                    # Validate that the found card matches the identified name
+                    if card_details:
+                        found_name = card_details.get('name', '')
+                        if found_name.lower() != card_name.lower():
+                            logger.info(f"Set/number lookup found '{found_name}' but Claude identified '{card_name}' - name mismatch, falling back to name search")
+                            card_details = None
+                    else:
                         logger.info(f"Set/number lookup failed, falling back to name search")
 
                 # Fallback to name search if specific lookup failed or wasn't possible
                 if not card_details:
-                    card_details = await search_card_by_name(card_name, set_code if set_code else None)
+                    card_details = await search_card_by_name(card_name, None)  # Don't use set_code since it might be wrong
 
                 if card_details:
                     # Get current prices
