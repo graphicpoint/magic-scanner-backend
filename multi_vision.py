@@ -69,10 +69,17 @@ def identify_cards_pro(image_data: bytes) -> List[Dict[str, Any]]:
             if claude_name == openai_name:
                 # Perfect match - high confidence!
                 logger.info(f"✓ Both providers agree on card name: '{claude_card.get('name')}'")
+
+                # Return both set/number options for main.py to try
+                # This handles cases where one provider reads the set/number correctly
                 validated_cards.append({
                     'name': claude_card.get('name'),  # Use Claude's capitalization
                     'set': claude_card.get('set'),
                     'collector_number': claude_card.get('collector_number'),
+                    'set_alternatives': [{
+                        'set': openai_card.get('set'),
+                        'collector_number': openai_card.get('collector_number')
+                    }] if openai_card.get('set') != claude_card.get('set') or openai_card.get('collector_number') != claude_card.get('collector_number') else [],
                     'confidence': 'high',  # Both agreed
                     'validation': 'both_agree'
                 })

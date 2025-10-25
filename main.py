@@ -140,22 +140,45 @@ async def scan_cards(
                 # Search for card on Scryfall
                 card_details = None
 
-                # If we have set and collector number, try specific lookup first
+                # Collect all set/number combinations to try
+                set_number_attempts = []
                 if set_code and collector_number:
-                    card_details = await get_card_details_by_set(set_code, collector_number)
+                    set_number_attempts.append((set_code, collector_number))
+
+                # Add alternative set/numbers from Pro Scan if available
+                set_alternatives = card_info.get('set_alternatives', [])
+                for alt in set_alternatives:
+                    alt_set = alt.get('set')
+                    alt_number = alt.get('collector_number')
+                    if alt_number and '/' in alt_number:
+                        alt_number = alt_number.split('/')[0]
+                    if alt_number and alt_number.isdigit():
+                        alt_number = str(int(alt_number))
+                    if alt_set and alt_number:
+                        set_number_attempts.append((alt_set, alt_number))
+                        logger.info(f"Alternative from Pro Scan: {alt_set}/{alt_number}")
+
+                # Try each set/number combination
+                for attempt_set, attempt_number in set_number_attempts:
+                    logger.info(f"Trying lookup: {attempt_set}/{attempt_number}")
+                    card_details = await get_card_details_by_set(attempt_set, attempt_number)
 
                     # Validate that the found card matches the identified name
                     if card_details:
                         found_name = card_details.get('name', '')
-                        if found_name.lower() != card_name.lower():
-                            logger.info(f"Set/number lookup found '{found_name}' but Claude identified '{card_name}' - name mismatch, falling back to name search")
+                        if found_name.lower() == card_name.lower():
+                            logger.info(f"✓ Found exact match: {attempt_set}/{attempt_number}")
+                            break  # Found the right card!
+                        else:
+                            logger.info(f"✗ Name mismatch: found '{found_name}' but expected '{card_name}'")
                             card_details = None
                     else:
-                        logger.info(f"Set/number lookup failed, falling back to name search")
+                        logger.info(f"✗ Not found: {attempt_set}/{attempt_number}")
 
-                # Fallback to name search if specific lookup failed or wasn't possible
+                # Fallback to name search if all specific lookups failed
                 if not card_details:
-                    card_details = await search_card_by_name(card_name, None)  # Don't use set_code since it might be wrong
+                    logger.info(f"All set/number attempts failed, falling back to name search")
+                    card_details = await search_card_by_name(card_name, None)
 
                 if card_details:
                     # Get current prices
