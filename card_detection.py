@@ -61,8 +61,8 @@ def detect_cards_from_image(image_data: bytes) -> List[np.ndarray]:
 
 def preprocess_image(image: np.ndarray) -> np.ndarray:
     """
-    Preprocess image for better card detection
-    Hybrid approach: edges + contrast detection
+    Preprocess image for card detection
+    Simple approach focusing on edge detection only
 
     Args:
         image: Input image
@@ -73,55 +73,26 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    # Enhance contrast first
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
+    # Apply slight blur to reduce noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    # Reduce noise while preserving edges
-    denoised = cv2.fastNlMeansDenoising(enhanced, None, 10, 7, 21)
+    # Use Canny edge detection with moderate settings
+    # These values work well for card edges
+    edges = cv2.Canny(blurred, 50, 150)
 
-    # Light blur
-    blurred = cv2.GaussianBlur(denoised, (5, 5), 0)
+    # MINIMAL morphology - just enough to close small gaps
+    # Too much morphology connects everything into one big blob
+    kernel = np.ones((3, 3), np.uint8)
 
-    # APPROACH 1: Edge detection
-    # Very sensitive Canny - we want to catch card borders
-    edges = cv2.Canny(blurred, 15, 60, apertureSize=3)
+    # Dilate edges slightly to connect nearby edges
+    dilated = cv2.dilate(edges, kernel, iterations=2)
 
-    # APPROACH 2: Adaptive threshold
-    # This catches the contrast between card and background
-    adaptive = cv2.adaptiveThreshold(
-        blurred,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        31,
-        5
-    )
-    # Invert to get dark regions as white
-    adaptive_inv = cv2.bitwise_not(adaptive)
+    # Close small gaps
+    closed = cv2.morphologyEx(dilated, cv2.MORPH_CLOSE, kernel, iterations=1)
 
-    # APPROACH 3: Simple threshold for very dark areas (black border)
-    _, dark_thresh = cv2.threshold(blurred, 70, 255, cv2.THRESH_BINARY_INV)
+    logger.info("Preprocessing complete - simple Canny edge detection")
 
-    # Combine all three approaches
-    combined = cv2.bitwise_or(edges, cv2.bitwise_or(adaptive_inv, dark_thresh))
-
-    # Morphological operations to connect card edges
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11))
-
-    # Close gaps to form complete rectangles
-    closed = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel, iterations=5)
-
-    # Remove small noise
-    kernel_small = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-    cleaned = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel_small, iterations=2)
-
-    # Final dilation to ensure edges are strong
-    final = cv2.dilate(cleaned, kernel, iterations=1)
-
-    logger.info("Preprocessing complete - hybrid edge+threshold detection")
-
-    return final
+    return closed
 
 
 def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
@@ -156,8 +127,8 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
             logger.info(f"Contour {i}: area={area}, area%={area/image_area*100:.2f}%")
 
         # Filter by area - very lenient to catch cards at various distances
-        min_area = image_area * 0.005  # 0.5% minimum - very small cards in distance
-        max_area = image_area * 0.80  # 80% max - reject "whole image" contours
+        min_area = image_area * 0.01  # 1% minimum
+        max_area = image_area * 0.75  # 75% max - reject "whole image" contours
 
         if area < min_area or area > max_area:
             if i < 30:
@@ -189,8 +160,8 @@ def find_card_contours(binary_image: np.ndarray) -> List[np.ndarray]:
 
             # Magic card aspect ratio with tolerance
             # Standard: 63mm x 88mm = 0.716
-            # Accept from 0.55 (very angled) to 0.85 (nearly square from perspective)
-            if 0.55 <= aspect_ratio <= 0.85:
+            # Accept from 0.50 (angled) to 0.90 (nearly square from perspective)
+            if 0.50 <= aspect_ratio <= 0.90:
                 card_contours.append(contour)
                 logger.info(f"Contour {i}: ACCEPTED! area={area:.0f} ({area/image_area*100:.1f}%), ratio={aspect_ratio:.2f}, w={width:.0f}, h={height:.0f}")
             elif i < 15:
