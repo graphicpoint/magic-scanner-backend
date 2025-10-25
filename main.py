@@ -255,10 +255,43 @@ async def database_stats():
             status_code=503,
             detail="Card database not loaded"
         )
-    
+
     return {
         "total_cards": len(CARD_DATABASE),
         "status": "loaded",
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+@app.get("/database/cards")
+async def get_database_cards() -> Dict[str, Any]:
+    """
+    Get all cards in the database
+    Returns name and scryfall_id for each card
+    """
+    if CARD_DATABASE is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Card database not loaded"
+        )
+
+    # Extract card information from database
+    cards = []
+    for card_name, card_data in CARD_DATABASE.items():
+        cards.append({
+            "name": card_name,
+            "scryfall_id": card_data.get('scryfall_id', 'unknown'),
+            "set": card_data.get('set', 'unknown'),
+            "set_name": card_data.get('set_name', 'unknown')
+        })
+
+    # Sort by name for easier browsing
+    cards.sort(key=lambda x: x['name'])
+
+    return {
+        "success": True,
+        "total_cards": len(cards),
+        "cards": cards,
         "timestamp": datetime.now().isoformat()
     }
 
